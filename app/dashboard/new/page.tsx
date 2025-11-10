@@ -5,11 +5,13 @@ import { useState } from "react";
 import {
   DndContext,
   DragEndEvent,
+  DragOverEvent,
   DragOverlay,
   closestCorners,
   PointerSensor,
   useSensor,
   useSensors,
+  useDroppable,
 } from "@dnd-kit/core";
 import { arrayMove, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useSortable } from "@dnd-kit/sortable";
@@ -52,6 +54,34 @@ interface ListTemplate {
  * #6B6B9A (Apparition) - Accent color
  * #8B8BB8 (Specter) - Bright accents
  */
+
+// Droppable Column Component
+function DroppableColumn({
+  id,
+  children,
+  darkMode,
+}: {
+  id: string;
+  children: React.ReactNode;
+  darkMode: boolean;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`backdrop-blur-xl rounded-2xl border p-6 shadow-lg min-h-[600px] transition-all ${
+        isOver ? "ring-2 ring-opacity-50" : ""
+      } ${
+        darkMode
+          ? `bg-[#1A1A2E]/60 border-[#2A2A45]/60 ${isOver ? "ring-[#6B6B9A]" : ""}`
+          : `bg-white/60 border-[#E8E8F2]/60 ${isOver ? "ring-[#9B9BC8]" : ""}`
+      }`}
+    >
+      {children}
+    </div>
+  );
+}
 
 // Draggable Task Component
 function DraggableTask({
@@ -271,6 +301,13 @@ export default function NewListPage() {
     // Check if dropped on a priority column
     if (overId === "high" || overId === "medium" || overId === "low") {
       updateTaskPriority(activeId, overId);
+      return;
+    }
+
+    // Check if dropped on another task
+    const overTask = list.tasks.find((t) => t.id === overId);
+    if (overTask) {
+      updateTaskPriority(activeId, overTask.priority);
     }
   };
 
@@ -471,15 +508,7 @@ export default function NewListPage() {
                   const config = priorityConfig[priority];
 
                   return (
-                    <div
-                      key={priority}
-                      id={priority}
-                      className={`backdrop-blur-xl rounded-2xl border p-6 shadow-lg min-h-[600px] ${
-                        darkMode
-                          ? "bg-[#1A1A2E]/60 border-[#2A2A45]/60"
-                          : "bg-white/60 border-[#E8E8F2]/60"
-                      }`}
-                    >
+                    <DroppableColumn key={priority} id={priority} darkMode={darkMode}>
                       <div className="flex items-center gap-3 mb-6">
                         <span className="text-2xl">{config.emoji}</span>
                         <h3 className={`text-sm font-semibold uppercase tracking-wider opacity-70`} style={{ color: config.color }}>
@@ -505,7 +534,7 @@ export default function NewListPage() {
                           )}
                         </SortableContext>
                       </div>
-                    </div>
+                    </DroppableColumn>
                   );
                 })}
               </div>
