@@ -2,12 +2,26 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  closestCorners,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import { arrayMove, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface TaskItem {
   id: string;
   title: string;
   description?: string;
   status: "pending" | "complete";
+  priority: "high" | "medium" | "low";
+  dueDate?: string; // ISO date string
 }
 
 interface ListTemplate {
@@ -39,8 +53,118 @@ interface ListTemplate {
  * #8B8BB8 (Specter) - Bright accents
  */
 
+// Draggable Task Component
+function DraggableTask({
+  task,
+  darkMode,
+  updateTaskDate,
+  toggleTaskStatus,
+  deleteTask
+}: {
+  task: TaskItem;
+  darkMode: boolean;
+  updateTaskDate: (id: string, date: string) => void;
+  toggleTaskStatus: (id: string) => void;
+  deleteTask: (id: string) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: task.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`group backdrop-blur-sm rounded-xl border p-4 transition-all duration-300 ${
+        task.status === "complete" ? "opacity-40" : ""
+      } ${
+        darkMode
+          ? "bg-[#2A2A45]/40 border-[#4A4A6A]/60 hover:bg-[#2A2A45]/60"
+          : "bg-white/40 border-[#E8E8F2]/60 hover:bg-white/60"
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        {/* Drag Handle */}
+        <button
+          {...attributes}
+          {...listeners}
+          className={`mt-1 cursor-grab active:cursor-grabbing ${
+            darkMode ? "text-[#4A4A6A] hover:text-[#6B6B9A]" : "text-[#C5C5E0] hover:text-[#9B9BC8]"
+          }`}
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+          </svg>
+        </button>
+
+        {/* Checkbox */}
+        <input
+          type="checkbox"
+          checked={task.status === "complete"}
+          onChange={() => toggleTaskStatus(task.id)}
+          className={`mt-1 w-4 h-4 rounded transition-all ${
+            darkMode
+              ? "border-[#4A4A6A] text-[#6B6B9A] focus:ring-[#6B6B9A]"
+              : "border-[#E8E8F2] text-[#9B9BC8] focus:ring-[#9B9BC8]"
+          } focus:ring-offset-0`}
+        />
+
+        {/* Task Content */}
+        <div className="flex-1">
+          <p className={`text-sm ${task.status === "complete" ? "line-through" : ""} ${
+            darkMode ? "text-[#8B8BB8]" : "text-[#7B7BAF]"
+          }`}>
+            {task.title}
+          </p>
+
+          {/* Date Picker */}
+          <input
+            type="date"
+            value={task.dueDate || ""}
+            onChange={(e) => updateTaskDate(task.id, e.target.value)}
+            className={`mt-2 px-2 py-1 text-xs backdrop-blur-sm border rounded-lg focus:outline-none focus:ring-1 ${
+              darkMode
+                ? "bg-[#1A1A2E]/50 border-[#4A4A6A] text-[#6B6B9A] focus:ring-[#6B6B9A]"
+                : "bg-white/50 border-[#E8E8F2] text-[#9B9BC8] focus:ring-[#9B9BC8]"
+            }`}
+          />
+
+          {task.dueDate && (
+            <p className={`text-xs mt-1 ${darkMode ? "text-[#4A4A6A]" : "text-[#C5C5E0]"}`}>
+              Due: {new Date(task.dueDate).toLocaleDateString()}
+            </p>
+          )}
+        </div>
+
+        {/* Delete Button */}
+        <button
+          onClick={() => deleteTask(task.id)}
+          className={`opacity-0 group-hover:opacity-100 transition-opacity ${
+            darkMode ? "text-[#2A2A45] hover:text-[#4A4A6A]" : "text-[#E8E8F2] hover:text-[#C5C5E0]"
+          }`}
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function NewListPage() {
-  const [mode, setMode] = useState<"edit" | "preview">("edit");
+  const [mode, setMode] = useState<"edit" | "preview" | "timeline">("edit");
   const [darkMode, setDarkMode] = useState(true);
   const [list, setList] = useState<ListTemplate>({
     title: "",
@@ -59,6 +183,7 @@ export default function NewListPage() {
       id: crypto.randomUUID(),
       title: newTaskTitle,
       status: "pending",
+      priority: "medium",
     };
 
     setList({ ...list, tasks: [...list.tasks, newTask] });
@@ -110,6 +235,43 @@ export default function NewListPage() {
   const handleSave = () => {
     console.log("Saving list:", list);
     alert("Your specters have been captured...");
+  };
+
+  const updateTaskPriority = (taskId: string, newPriority: "high" | "medium" | "low") => {
+    setList({
+      ...list,
+      tasks: list.tasks.map((t) => (t.id === taskId ? { ...t, priority: newPriority } : t)),
+    });
+  };
+
+  const updateTaskDate = (taskId: string, newDate: string) => {
+    setList({
+      ...list,
+      tasks: list.tasks.map((t) => (t.id === taskId ? { ...t, dueDate: newDate } : t)),
+    });
+  };
+
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (!over) return;
+
+    const activeId = active.id as string;
+    const overId = over.id as string;
+
+    // Check if dropped on a priority column
+    if (overId === "high" || overId === "medium" || overId === "low") {
+      updateTaskPriority(activeId, overId);
+    }
   };
 
   return (
@@ -248,6 +410,20 @@ export default function NewListPage() {
                 Haunt
               </button>
               <button
+                onClick={() => setMode("timeline")}
+                className={`px-5 py-2 rounded-full text-sm transition-all duration-400 ${
+                  mode === "timeline"
+                    ? darkMode
+                      ? "bg-[#4A4A6A]/60 text-[#8B8BB8] shadow-sm"
+                      : "bg-white/80 text-[#7B7BAF] shadow-sm"
+                    : darkMode
+                      ? "text-[#4A4A6A] hover:text-[#6B6B9A]"
+                      : "text-[#C5C5E0] hover:text-[#9B9BC8]"
+                }`}
+              >
+                Timeline
+              </button>
+              <button
                 onClick={() => setMode("preview")}
                 className={`px-5 py-2 rounded-full text-sm transition-all duration-400 ${
                   mode === "preview"
@@ -280,8 +456,61 @@ export default function NewListPage() {
 
       {/* Main Content */}
       <main className="pt-32 pb-20 px-8 relative z-10">
-        <div className="max-w-4xl mx-auto">
-          {mode === "edit" ? (
+        <div className={mode === "timeline" ? "max-w-7xl mx-auto" : "max-w-4xl mx-auto"}>
+          {mode === "timeline" ? (
+            /* Timeline Mode - Kanban Board */
+            <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
+              <div className="grid grid-cols-3 gap-6">
+                {(["high", "medium", "low"] as const).map((priority) => {
+                  const priorityTasks = list.tasks.filter((t) => t.priority === priority);
+                  const priorityConfig = {
+                    high: { label: "High Priority", emoji: "🔥", color: darkMode ? "#8B8BB8" : "#7B7BAF" },
+                    medium: { label: "Medium Priority", emoji: "✨", color: darkMode ? "#6B6B9A" : "#9B9BC8" },
+                    low: { label: "Low Priority", emoji: "🌙", color: darkMode ? "#4A4A6A" : "#C5C5E0" },
+                  };
+                  const config = priorityConfig[priority];
+
+                  return (
+                    <div
+                      key={priority}
+                      id={priority}
+                      className={`backdrop-blur-xl rounded-2xl border p-6 shadow-lg min-h-[600px] ${
+                        darkMode
+                          ? "bg-[#1A1A2E]/60 border-[#2A2A45]/60"
+                          : "bg-white/60 border-[#E8E8F2]/60"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 mb-6">
+                        <span className="text-2xl">{config.emoji}</span>
+                        <h3 className={`text-sm font-semibold uppercase tracking-wider opacity-70`} style={{ color: config.color }}>
+                          {config.label}
+                        </h3>
+                        <span className={`ml-auto text-xs opacity-50 ${darkMode ? "text-[#4A4A6A]" : "text-[#C5C5E0]"}`}>
+                          {priorityTasks.length}
+                        </span>
+                      </div>
+
+                      <div className="space-y-3">
+                        <SortableContext items={priorityTasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
+                          {priorityTasks.length === 0 ? (
+                            <div className="text-center py-12 opacity-30">
+                              <p className={`text-sm ${darkMode ? "text-[#4A4A6A]" : "text-[#C5C5E0]"}`}>
+                                Drop tasks here
+                              </p>
+                            </div>
+                          ) : (
+                            priorityTasks.map((task) => (
+                              <DraggableTask key={task.id} task={task} darkMode={darkMode} updateTaskDate={updateTaskDate} toggleTaskStatus={toggleTaskStatus} deleteTask={deleteTask} />
+                            ))
+                          )}
+                        </SortableContext>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </DndContext>
+          ) : mode === "edit" ? (
             <div className="space-y-6">
               {/* List Metadata */}
               <div className={`backdrop-blur-xl rounded-2xl border p-10 shadow-lg transition-all duration-500 hover:shadow-xl ${
