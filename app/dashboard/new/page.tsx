@@ -127,6 +127,7 @@ function DraggableTask({
       <div className="flex items-start gap-3">
         {/* Drag Handle */}
         <button
+          type="button"
           {...attributes}
           {...listeners}
           className={`mt-1 cursor-grab active:cursor-grabbing ${
@@ -329,6 +330,23 @@ export default function NewListPage() {
         .ghost-cursor button,
         .ghost-cursor a {
           cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><text x="0" y="24" font-size="24">👻</text></svg>') 16 16, pointer;
+        }
+
+        /* Allow drag handles to use grab cursor */
+        .cursor-grab {
+          cursor: grab !important;
+          touch-action: none;
+          user-select: none;
+        }
+
+        .cursor-grab:active,
+        .active\:cursor-grabbing:active {
+          cursor: grabbing !important;
+        }
+
+        /* Prevent text selection during drag */
+        [data-dnd-draggable] {
+          touch-action: none;
         }
 
         @keyframes float {
