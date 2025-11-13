@@ -1,7 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { id } from "@instantdb/react";
+import db from "@/lib/db";
 import {
   DndContext,
   DragEndEvent,
@@ -290,91 +293,182 @@ function DraggableTask({
 }
 
 export default function NewListPage() {
+  const router = useRouter();
+  const { user, isLoading: authLoading } = db.useAuth();
+
   const [mode, setMode] = useState<"edit" | "preview" | "timeline">("edit");
   const [darkMode, setDarkMode] = useState(true);
-  const [list, setList] = useState<ListTemplate>({
-    title: "",
-    description: "",
-    tasks: [],
-    tags: [],
-    public: false,
-  });
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [tagInput, setTagInput] = useState("");
+  const [listTitle, setListTitle] = useState("");
+  const [listDescription, setListDescription] = useState("");
+  const [listPublic, setListPublic] = useState(false);
+  const [tags, setTags] = useState<string[]>([]);
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, authLoading, router]);
+
+  // Query lists and tasks for the current user
+  const { data, isLoading: dataLoading } = db.useQuery(
+    user
+      ? {
+          lists: {
+            $: {
+              where: { 'owner.id': user.id },
+              order: { createdAt: 'desc' },
+              limit: 1,
+            },
+            owner: {},
+            tasks: {
+              $: { order: { order: 'asc' } },
+            },
+          },
+        }
+      : null
+  );
+
+  const currentList = data?.lists?.[0];
+  const tasks = currentList?.tasks || [];
+
+  // Create a default list if user doesn't have one
+  useEffect(() => {
+    if (!dataLoading && user && !currentList) {
+      const listId = id();
+      db.transact(
+        db.tx.lists[listId]
+          .update({
+            title: "My Tasks",
+            description: "My personal to-do list",
+            tags: [],
+            public: false,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          })
+          .link({ owner: user.id })
+      );
+    }
+  }, [dataLoading, user, currentList]);
+
+  // Sync list metadata to local state
+  useEffect(() => {
+    if (currentList) {
+      setListTitle(currentList.title || "");
+      setListDescription(currentList.description || "");
+      setListPublic(currentList.public || false);
+      setTags((currentList.tags as string[]) || []);
+    }
+  }, [currentList]);
 
   const addTask = () => {
-    if (!newTaskTitle.trim()) return;
+    if (!newTaskTitle.trim() || !currentList) return;
 
-    const newTask: TaskItem = {
-      id: crypto.randomUUID(),
-      title: newTaskTitle,
-      status: "pending",
-      priority: "medium",
-    };
+    const taskId = id();
+    const maxOrder = tasks.length > 0 ? Math.max(...tasks.map((t: any) => t.order || 0)) : 0;
 
-    setList({ ...list, tasks: [...list.tasks, newTask] });
+    db.transact(
+      db.tx.tasks[taskId]
+        .update({
+          title: newTaskTitle,
+          description: "",
+          status: "pending",
+          priority: "medium",
+          createdAt: Date.now(),
+          order: maxOrder + 1,
+        })
+        .link({ list: currentList.id })
+    );
+
     setNewTaskTitle("");
   };
 
   const deleteTask = (taskId: string) => {
-    setList({ ...list, tasks: list.tasks.filter((t) => t.id !== taskId) });
+    db.transact(db.tx.tasks[taskId].delete());
   };
 
   const toggleTaskStatus = (taskId: string) => {
-    setList({
-      ...list,
-      tasks: list.tasks.map((t) =>
-        t.id === taskId
-          ? { ...t, status: t.status === "complete" ? "pending" : "complete" }
-          : t
-      ),
-    });
+    const task = tasks.find((t: any) => t.id === taskId);
+    if (!task) return;
+
+    db.transact(
+      db.tx.tasks[taskId].update({
+        status: task.status === "complete" ? "pending" : "complete",
+      })
+    );
   };
 
   const updateTaskTitle = (taskId: string, newTitle: string) => {
-    setList({
-      ...list,
-      tasks: list.tasks.map((t) => (t.id === taskId ? { ...t, title: newTitle } : t)),
-    });
+    db.transact(db.tx.tasks[taskId].update({ title: newTitle }));
   };
 
   const moveTask = (index: number, direction: "up" | "down") => {
-    const newTasks = [...list.tasks];
     const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= tasks.length) return;
 
-    if (targetIndex < 0 || targetIndex >= newTasks.length) return;
+    const task1 = tasks[index];
+    const task2 = tasks[targetIndex];
 
-    [newTasks[index], newTasks[targetIndex]] = [newTasks[targetIndex], newTasks[index]];
-    setList({ ...list, tasks: newTasks });
+    db.transact([
+      db.tx.tasks[task1.id].update({ order: task2.order }),
+      db.tx.tasks[task2.id].update({ order: task1.order }),
+    ]);
   };
 
   const addTag = () => {
-    if (!tagInput.trim() || list.tags.includes(tagInput.trim())) return;
-    setList({ ...list, tags: [...list.tags, tagInput.trim()] });
+    if (!tagInput.trim() || tags.includes(tagInput.trim()) || !currentList) return;
+
+    const newTags = [...tags, tagInput.trim()];
+    setTags(newTags);
+
+    db.transact(
+      db.tx.lists[currentList.id].update({
+        tags: newTags,
+        updatedAt: Date.now(),
+      })
+    );
+
     setTagInput("");
   };
 
   const removeTag = (tag: string) => {
-    setList({ ...list, tags: list.tags.filter((t) => t !== tag) });
+    if (!currentList) return;
+
+    const newTags = tags.filter((t) => t !== tag);
+    setTags(newTags);
+
+    db.transact(
+      db.tx.lists[currentList.id].update({
+        tags: newTags,
+        updatedAt: Date.now(),
+      })
+    );
   };
 
   const handleSave = () => {
-    console.log("Saving list:", list);
+    if (!currentList) return;
+
+    db.transact(
+      db.tx.lists[currentList.id].update({
+        title: listTitle,
+        description: listDescription,
+        public: listPublic,
+        tags: tags,
+        updatedAt: Date.now(),
+      })
+    );
+
     alert("Your specters have been captured...");
   };
 
   const updateTaskPriority = (taskId: string, newPriority: "high" | "medium" | "low") => {
-    setList({
-      ...list,
-      tasks: list.tasks.map((t) => (t.id === taskId ? { ...t, priority: newPriority } : t)),
-    });
+    db.transact(db.tx.tasks[taskId].update({ priority: newPriority }));
   };
 
   const updateTaskDate = (taskId: string, newDate: string) => {
-    setList({
-      ...list,
-      tasks: list.tasks.map((t) => (t.id === taskId ? { ...t, dueDate: newDate } : t)),
-    });
+    db.transact(db.tx.tasks[taskId].update({ dueDate: newDate }));
   };
 
   // Drag and drop sensors
@@ -407,7 +501,7 @@ export default function NewListPage() {
     }
 
     // Check if dropped on another task in Timeline mode
-    const overTask = list.tasks.find((t) => t.id === overId);
+    const overTask = tasks.find((t: any) => t.id === overId);
     if (overTask && mode === "timeline") {
       updateTaskPriority(activeId, overTask.priority);
       return;
@@ -415,15 +509,39 @@ export default function NewListPage() {
 
     // Handle reordering in Preview/Manifest mode
     if (activeId !== overId && mode === "preview") {
-      const oldIndex = list.tasks.findIndex((t) => t.id === activeId);
-      const newIndex = list.tasks.findIndex((t) => t.id === overId);
+      const oldIndex = tasks.findIndex((t: any) => t.id === activeId);
+      const newIndex = tasks.findIndex((t: any) => t.id === overId);
 
       if (oldIndex !== -1 && newIndex !== -1) {
-        const newTasks = arrayMove(list.tasks, oldIndex, newIndex);
-        setList({ ...list, tasks: newTasks });
+        // Update order values for both tasks
+        const task1 = tasks[oldIndex];
+        const task2 = tasks[newIndex];
+        db.transact([
+          db.tx.tasks[task1.id].update({ order: task2.order }),
+          db.tx.tasks[task2.id].update({ order: task1.order }),
+        ]);
       }
     }
   };
+
+  const handleSignOut = () => {
+    db.auth.signOut();
+    router.push('/login');
+  };
+
+  // Show loading state while checking authentication or loading data
+  if (authLoading || dataLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0F0F1A] via-[#1A1A2E] to-[#2A2A45]">
+        <div className="text-[#8B8BB8]">Loading...</div>
+      </div>
+    );
+  }
+
+  // Don't render dashboard if not authenticated (will redirect)
+  if (!user) {
+    return null;
+  }
 
   return (
     <div className={`min-h-screen relative overflow-hidden ${
@@ -533,6 +651,27 @@ export default function NewListPage() {
           </div>
 
           <div className="flex items-center gap-4">
+            {/* User Info */}
+            <div className={`flex items-center gap-3 px-4 py-2 backdrop-blur-sm rounded-full border ${
+              darkMode
+                ? "bg-[#2A2A45]/40 border-[#4A4A6A]/50"
+                : "bg-white/40 border-[#E8E8F2]/50"
+            }`}>
+              <span className={`text-sm ${darkMode ? "text-[#8B8BB8]" : "text-[#7B7BAF]"}`}>
+                {user.email}
+              </span>
+              <button
+                onClick={handleSignOut}
+                className={`text-xs px-3 py-1 rounded-full transition-all duration-400 ${
+                  darkMode
+                    ? "bg-[#4A4A6A]/60 text-[#8B8BB8] hover:bg-[#4A4A6A]/80"
+                    : "bg-white/80 text-[#7B7BAF] hover:bg-white"
+                }`}
+              >
+                Sign out
+              </button>
+            </div>
+
             {/* Dark Mode Toggle */}
             <button
               onClick={() => setDarkMode(!darkMode)}
@@ -597,7 +736,7 @@ export default function NewListPage() {
 
             <button
               onClick={handleSave}
-              disabled={!list.title.trim()}
+              disabled={!listTitle.trim()}
               className={`px-6 py-2.5 rounded-full text-sm backdrop-blur-sm transition-all duration-400 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100 ${
                 darkMode
                   ? "bg-gradient-to-br from-[#6B6B9A] to-[#4A4A6A] text-white hover:shadow-lg hover:shadow-[#6B6B9A]/20"
@@ -618,7 +757,7 @@ export default function NewListPage() {
             <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
               <div className="grid grid-cols-3 gap-6">
                 {(["high", "medium", "low"] as const).map((priority) => {
-                  const priorityTasks = list.tasks.filter((t) => t.priority === priority);
+                  const priorityTasks = tasks.filter((t: any) => t.priority === priority);
                   const priorityConfig = {
                     high: { label: "High Priority", emoji: "🔥", color: darkMode ? "#8B8BB8" : "#7B7BAF" },
                     medium: { label: "Medium Priority", emoji: "✨", color: darkMode ? "#6B6B9A" : "#9B9BC8" },
@@ -675,8 +814,8 @@ export default function NewListPage() {
                   </label>
                   <input
                     type="text"
-                    value={list.title}
-                    onChange={(e) => setList({ ...list, title: e.target.value })}
+                    value={listTitle}
+                    onChange={(e) => setListTitle(e.target.value)}
                     placeholder="Name your phantom..."
                     className={`w-full px-4 py-3 backdrop-blur-sm border rounded-xl text-sm focus:outline-none focus:ring-1 transition-all duration-400 ${
                       darkMode
@@ -692,8 +831,8 @@ export default function NewListPage() {
                     Ethereal notes
                   </label>
                   <textarea
-                    value={list.description}
-                    onChange={(e) => setList({ ...list, description: e.target.value })}
+                    value={listDescription}
+                    onChange={(e) => setListDescription(e.target.value)}
                     placeholder="Whisper your intentions into the void..."
                     rows={3}
                     className={`w-full px-4 py-3 backdrop-blur-sm border rounded-xl text-sm focus:outline-none focus:ring-1 resize-none transition-all duration-400 leading-relaxed ${
@@ -734,7 +873,7 @@ export default function NewListPage() {
                     </button>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {list.tags.map((tag) => (
+                    {tags.map((tag) => (
                       <span
                         key={tag}
                         className={`inline-flex items-center gap-2 px-3 py-1.5 backdrop-blur-sm text-sm rounded-full border hover:scale-105 transition-all duration-300 ${
@@ -762,8 +901,8 @@ export default function NewListPage() {
                   <label className="flex items-center gap-3 group">
                     <input
                       type="checkbox"
-                      checked={list.public}
-                      onChange={(e) => setList({ ...list, public: e.target.checked })}
+                      checked={listPublic}
+                      onChange={(e) => setListPublic(e.target.checked)}
                       className={`w-4 h-4 rounded transition-all duration-300 ${
                         darkMode
                           ? "border-[#4A4A6A] text-[#6B6B9A] focus:ring-[#6B6B9A]"
@@ -796,16 +935,16 @@ export default function NewListPage() {
                   <h2 className={`text-lg font-semibold tracking-tight uppercase opacity-60 ${darkMode ? "text-[#8B8BB8]" : "text-[#7B7BAF]"}`}>
                     Unfinished business
                   </h2>
-                  {list.tasks.length > 0 && (
+                  {tasks.length > 0 && (
                     <span className={`text-xs opacity-50 ${darkMode ? "text-[#4A4A6A]" : "text-[#C5C5E0]"}`}>
-                      {list.tasks.filter(t => t.status === "pending").length} specters lingering
+                      {tasks.filter((t: any) => t.status === "pending").length} specters lingering
                     </span>
                   )}
                 </div>
 
                 {/* Task List */}
                 <div className="space-y-3 mb-8">
-                  {list.tasks.length === 0 ? (
+                  {tasks.length === 0 ? (
                     <div className="text-center py-16">
                       <div className="text-6xl mb-4 opacity-20">👻</div>
                       <p className={darkMode ? "text-[#4A4A6A]" : "text-[#C5C5E0]"}>The void awaits</p>
@@ -814,7 +953,7 @@ export default function NewListPage() {
                       </p>
                     </div>
                   ) : (
-                    list.tasks.map((task, index) => (
+                    tasks.map((task: any, index: number) => (
                       <div
                         key={task.id}
                         className={`group flex items-center gap-4 p-4 backdrop-blur-sm rounded-xl border transition-all duration-400 ${
@@ -852,7 +991,7 @@ export default function NewListPage() {
                           </button>
                           <button
                             onClick={() => moveTask(index, "down")}
-                            disabled={index === list.tasks.length - 1}
+                            disabled={index === tasks.length - 1}
                             className={`disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-300 ${
                               darkMode ? "text-[#4A4A6A] hover:text-[#6B6B9A]" : "text-[#C5C5E0] hover:text-[#9B9BC8]"
                             }`}
@@ -928,15 +1067,15 @@ export default function NewListPage() {
                   <div className="flex items-start justify-between mb-6">
                     <div>
                       <h1 className={`text-3xl font-semibold mb-3 tracking-tight ${darkMode ? "text-[#8B8BB8]" : "text-[#7B7BAF]"}`}>
-                        {list.title || "Unnamed specter"}
+                        {listTitle || "Unnamed specter"}
                       </h1>
-                      {list.description && (
+                      {listDescription && (
                         <p className={`leading-relaxed ${darkMode ? "text-[#6B6B9A]" : "text-[#9B9BC8]"}`}>
-                          {list.description}
+                          {listDescription}
                         </p>
                       )}
                     </div>
-                    {list.public && (
+                    {listPublic && (
                       <span className={`px-4 py-1.5 backdrop-blur-sm text-xs rounded-full border ${
                         darkMode
                           ? "bg-gradient-to-br from-[#2A2A45]/70 to-[#4A4A6A]/50 text-[#8B8BB8] border-[#4A4A6A]"
@@ -947,9 +1086,9 @@ export default function NewListPage() {
                     )}
                   </div>
 
-                  {list.tags.length > 0 && (
+                  {tags.length > 0 && (
                     <div className="flex flex-wrap gap-2">
-                      {list.tags.map((tag) => (
+                      {tags.map((tag) => (
                         <span
                           key={tag}
                           className={`px-3 py-1.5 backdrop-blur-sm text-sm rounded-full border ${
@@ -965,15 +1104,15 @@ export default function NewListPage() {
                   )}
                 </div>
 
-                <SortableContext items={list.tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
+                <SortableContext items={tasks.map((t: any) => t.id)} strategy={verticalListSortingStrategy}>
                   <div className="space-y-3">
-                    {list.tasks.length === 0 ? (
+                    {tasks.length === 0 ? (
                       <div className="text-center py-16">
                         <div className="text-6xl mb-4 opacity-20">👻</div>
                         <p className={darkMode ? "text-[#4A4A6A]" : "text-[#C5C5E0]"}>No specters to show</p>
                       </div>
                     ) : (
-                      list.tasks.map((task) => (
+                      tasks.map((task: any) => (
                         <PreviewDraggableTask key={task.id} task={task} darkMode={darkMode} />
                       ))
                     )}
