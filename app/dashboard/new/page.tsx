@@ -24,9 +24,11 @@ interface TaskItem {
   id: string;
   title: string;
   description?: string;
-  status: "pending" | "complete";
-  priority: "high" | "medium" | "low";
-  dueDate?: string; // ISO date string
+  status: string;
+  priority: string;
+  dueDate?: string;
+  createdAt?: number;
+  order?: number;
 }
 
 interface ListTemplate {
@@ -503,7 +505,7 @@ export default function NewListPage() {
     // Check if dropped on another task in Timeline mode
     const overTask = tasks.find((t: any) => t.id === overId);
     if (overTask && mode === "timeline") {
-      updateTaskPriority(activeId, overTask.priority);
+      updateTaskPriority(activeId, overTask.priority as "high" | "medium" | "low");
       return;
     }
 

@@ -20,7 +20,7 @@ const _schema = i.schema({
       priority: i.string(), // "high" | "medium" | "low"
       dueDate: i.string().optional(),
       createdAt: i.number().indexed(),
-      order: i.number(), // For ordering tasks within a list
+      order: i.number().indexed(), // For ordering tasks within a list
     }),
   },
   links: {
