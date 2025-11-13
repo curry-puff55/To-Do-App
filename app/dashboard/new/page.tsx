@@ -5,6 +5,8 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { id } from "@instantdb/react";
 import db from "@/lib/db";
+
+export const dynamic = 'force-dynamic';
 import {
   DndContext,
   DragEndEvent,

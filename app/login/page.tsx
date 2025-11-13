@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import db from '@/lib/db';
 import { useRouter } from 'next/navigation';
 
+export const dynamic = 'force-dynamic';
+
 export default function LoginPage() {
   const [sentEmail, setSentEmail] = useState('');
   const router = useRouter();
