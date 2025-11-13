@@ -154,15 +154,20 @@ function DraggableTask({
   task,
   darkMode,
   updateTaskDate,
+  updateTaskTitle,
   toggleTaskStatus,
   deleteTask
 }: {
   task: TaskItem;
   darkMode: boolean;
   updateTaskDate: (id: string, date: string) => void;
+  updateTaskTitle: (id: string, title: string) => void;
   toggleTaskStatus: (id: string) => void;
   deleteTask: (id: string) => void;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(task.title);
+
   const {
     attributes,
     listeners,
@@ -176,6 +181,13 @@ function DraggableTask({
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
+  };
+
+  const handleSaveEdit = () => {
+    if (editValue.trim()) {
+      updateTaskTitle(task.id, editValue);
+    }
+    setIsEditing(false);
   };
 
   return (
@@ -219,11 +231,30 @@ function DraggableTask({
 
         {/* Task Content */}
         <div className="flex-1">
-          <p className={`text-sm ${task.status === "complete" ? "line-through" : ""} ${
-            darkMode ? "text-[#8B8BB8]" : "text-[#7B7BAF]"
-          }`}>
-            {task.title}
-          </p>
+          {isEditing ? (
+            <input
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={handleSaveEdit}
+              onKeyPress={(e) => e.key === "Enter" && handleSaveEdit()}
+              autoFocus
+              className={`w-full px-2 py-1 text-sm backdrop-blur-sm border rounded-lg focus:outline-none focus:ring-1 ${
+                darkMode
+                  ? "bg-[#1A1A2E]/50 border-[#4A4A6A] text-[#8B8BB8] focus:ring-[#6B6B9A]"
+                  : "bg-white/50 border-[#E8E8F2] text-[#7B7BAF] focus:ring-[#9B9BC8]"
+              }`}
+            />
+          ) : (
+            <p
+              onClick={() => setIsEditing(true)}
+              className={`text-sm cursor-text ${task.status === "complete" ? "line-through" : ""} ${
+                darkMode ? "text-[#8B8BB8]" : "text-[#7B7BAF]"
+              }`}
+            >
+              {task.title}
+            </p>
+          )}
 
           {/* Date Picker */}
           <input
@@ -397,46 +428,28 @@ export default function NewListPage() {
   };
 
   return (
-    <div className={`min-h-screen relative overflow-hidden ghost-cursor ${
+    <div className={`min-h-screen relative overflow-hidden ${
       darkMode
         ? "bg-gradient-to-br from-[#0F0F1A] via-[#1A1A2E] to-[#2A2A45]"
         : "bg-gradient-to-br from-[#FAFAFF] via-[#F4F4F9] to-[#E8E8F2]"
     }`}>
-      {/* Custom Ghost Cursor Styles */}
+      {/* Custom Styles */}
       <style jsx global>{`
-        .ghost-cursor,
-        .ghost-cursor * {
-          cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><text x="0" y="24" font-size="24">👻</text></svg>') 16 16, auto;
-        }
-
-        .ghost-cursor input,
-        .ghost-cursor textarea,
-        .ghost-cursor button,
-        .ghost-cursor a {
-          cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><text x="0" y="24" font-size="24">👻</text></svg>') 16 16, pointer;
-        }
-
-        /* Allow drag handles to use grab cursor */
+        /* Drag handles */
         .cursor-grab {
-          cursor: grab !important;
+          cursor: grab;
           touch-action: none;
           user-select: none;
-          pointer-events: auto !important;
         }
 
         .cursor-grab:active,
         .active\:cursor-grabbing:active {
-          cursor: grabbing !important;
+          cursor: grabbing;
         }
 
         /* Prevent text selection during drag */
         [data-dnd-draggable] {
           touch-action: none;
-        }
-
-        /* Ensure drag handles are clickable */
-        button.cursor-grab {
-          pointer-events: auto !important;
         }
 
         @keyframes float {
@@ -637,7 +650,7 @@ export default function NewListPage() {
                             </div>
                           ) : (
                             priorityTasks.map((task) => (
-                              <DraggableTask key={task.id} task={task} darkMode={darkMode} updateTaskDate={updateTaskDate} toggleTaskStatus={toggleTaskStatus} deleteTask={deleteTask} />
+                              <DraggableTask key={task.id} task={task} darkMode={darkMode} updateTaskDate={updateTaskDate} updateTaskTitle={updateTaskTitle} toggleTaskStatus={toggleTaskStatus} deleteTask={deleteTask} />
                             ))
                           )}
                         </SortableContext>
