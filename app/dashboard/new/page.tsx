@@ -12,9 +12,9 @@ import {
   useSensor,
   useSensors,
   useDroppable,
+  useDraggable,
 } from "@dnd-kit/core";
-import { arrayMove, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { useSortable } from "@dnd-kit/sortable";
+import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
 interface TaskItem {
@@ -173,13 +173,11 @@ function DraggableTask({
     listeners,
     setNodeRef,
     transform,
-    transition,
     isDragging,
-  } = useSortable({ id: task.id });
+  } = useDraggable({ id: task.id });
 
   const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+    transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
     opacity: isDragging ? 0.5 : 1,
   };
 
@@ -641,19 +639,17 @@ export default function NewListPage() {
                       </div>
 
                       <div className="space-y-3">
-                        <SortableContext items={priorityTasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
-                          {priorityTasks.length === 0 ? (
-                            <div className="text-center py-12 opacity-30">
-                              <p className={`text-sm ${darkMode ? "text-[#4A4A6A]" : "text-[#C5C5E0]"}`}>
-                                Drop tasks here
-                              </p>
-                            </div>
-                          ) : (
-                            priorityTasks.map((task) => (
-                              <DraggableTask key={task.id} task={task} darkMode={darkMode} updateTaskDate={updateTaskDate} updateTaskTitle={updateTaskTitle} toggleTaskStatus={toggleTaskStatus} deleteTask={deleteTask} />
-                            ))
-                          )}
-                        </SortableContext>
+                        {priorityTasks.length === 0 ? (
+                          <div className="text-center py-12 opacity-30">
+                            <p className={`text-sm ${darkMode ? "text-[#4A4A6A]" : "text-[#C5C5E0]"}`}>
+                              Drop tasks here
+                            </p>
+                          </div>
+                        ) : (
+                          priorityTasks.map((task) => (
+                            <DraggableTask key={task.id} task={task} darkMode={darkMode} updateTaskDate={updateTaskDate} updateTaskTitle={updateTaskTitle} toggleTaskStatus={toggleTaskStatus} deleteTask={deleteTask} />
+                          ))
+                        )}
                       </div>
                     </DroppableColumn>
                   );
