@@ -352,13 +352,19 @@ export default function NewListPage() {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 3,
       },
     })
   );
 
+  const handleDragStart = (event: any) => {
+    console.log("✨ Drag started!", { activeId: event.active.id });
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+
+    console.log("🎯 Drag ended!", { activeId: active.id, overId: over?.id, mode });
 
     if (!over) return;
 
@@ -415,6 +421,7 @@ export default function NewListPage() {
           cursor: grab !important;
           touch-action: none;
           user-select: none;
+          pointer-events: auto !important;
         }
 
         .cursor-grab:active,
@@ -425,6 +432,11 @@ export default function NewListPage() {
         /* Prevent text selection during drag */
         [data-dnd-draggable] {
           touch-action: none;
+        }
+
+        /* Ensure drag handles are clickable */
+        button.cursor-grab {
+          pointer-events: auto !important;
         }
 
         @keyframes float {
@@ -592,7 +604,7 @@ export default function NewListPage() {
         <div className={mode === "timeline" ? "max-w-7xl mx-auto" : "max-w-4xl mx-auto"}>
           {mode === "timeline" ? (
             /* Timeline Mode - Kanban Board */
-            <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
+            <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
               <div className="grid grid-cols-3 gap-6">
                 {(["high", "medium", "low"] as const).map((priority) => {
                   const priorityTasks = list.tasks.filter((t) => t.priority === priority);
@@ -897,7 +909,7 @@ export default function NewListPage() {
             </div>
           ) : (
             /* Preview Mode */
-            <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
+            <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
               <div className={`backdrop-blur-xl rounded-2xl border p-12 shadow-lg ${
                 darkMode
                   ? "bg-[#1A1A2E]/60 border-[#2A2A45]/60 shadow-[#6B6B9A]/5"
